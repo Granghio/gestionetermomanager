@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Generatore Licenze TermoManager</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Arial, Helvetica, sans-serif;
+        background: #f1f5f9;
+        color: #0f172a;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      main {
+        width: min(720px, 100%);
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 24px;
+        box-shadow: 0 18px 60px rgba(15, 23, 42, 0.16);
+      }
+      h1 {
+        margin: 0 0 18px;
+        color: #1d4ed8;
+        font-size: 1.55rem;
+      }
+      label {
+        display: block;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid #94a3b8;
+        border-radius: 6px;
+        padding: 12px;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 1rem;
+      }
+      textarea {
+        min-height: 90px;
+        resize: vertical;
+      }
+      button {
+        margin-top: 14px;
+        border: 0;
+        border-radius: 6px;
+        padding: 11px 16px;
+        background: #2563eb;
+        color: #ffffff;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .row {
+        margin-bottom: 18px;
+      }
+      .message {
+        min-height: 20px;
+        margin-top: 10px;
+        color: #b91c1c;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Generatore Licenza TermoManager</h1>
+      <div class="row">
+        <label for="browserId">ID browser</label>
+        <input id="browserId" maxlength="16" inputmode="numeric" autocomplete="off" />
+      </div>
+      <div class="row">
+        <label for="licenseKey">Chiave licenza</label>
+        <textarea id="licenseKey" readonly></textarea>
+      </div>
+      <button id="generateBtn" type="button">Genera licenza</button>
+      <button id="copyBtn" type="button">Copia licenza</button>
+      <div class="message" id="message"></div>
+    </main>
+    <script>
+      const LICENSE_SALT = "TermoManager-PWA-2026-LNC-SALT";
+      async function sha256Hex(value) {
+        const encoded = new TextEncoder().encode(value);
+        const digest = await crypto.subtle.digest("SHA-256", encoded);
+        return Array.from(new Uint8Array(digest))
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("")
+          .toUpperCase();
+      }
+      async function buildLicenseKey(browserId) {
+        const hash = await sha256Hex(browserId + LICENSE_SALT);
+        return `LNC-${hash.slice(0, 16)}-${browserId.slice(-4)}`;
+      }
+      function setMessage(text, ok) {
+        const message = document.getElementById("message");
+        message.textContent = text || "";
+        message.style.color = ok ? "#047857" : "#b91c1c";
+      }
+      document.getElementById("generateBtn").addEventListener("click", async () => {
+        const browserId = document.getElementById("browserId").value.trim();
+        if (!/^\d{16}$/.test(browserId)) {
+          setMessage("Inserisci un ID browser numerico di 16 cifre.", false);
+          return;
+        }
+        document.getElementById("licenseKey").value = await buildLicenseKey(browserId);
+        setMessage("Licenza generata.", true);
+      });
+      document.getElementById("copyBtn").addEventListener("click", async () => {
+        const value = document.getElementById("licenseKey").value.trim();
+        if (!value) {
+          setMessage("Genera prima una licenza.", false);
+          return;
+        }
+        await navigator.clipboard.writeText(value);
+        setMessage("Licenza copiata.", true);
+      });
+    </script>
+  </body>
+</html>
