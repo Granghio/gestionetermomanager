@@ -32,11 +32,17 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const requestUrl = new URL(event.request.url);
+  if (requestUrl.protocol !== "http:" && requestUrl.protocol !== "https:") return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {
         const responseClone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+        caches.open(CACHE_NAME).then((cache) => {
+          if (event.request.url.startsWith("http://") || event.request.url.startsWith("https://")) {
+            cache.put(event.request, responseClone).catch(() => {});
+          }
+        });
         return response;
       })
       .catch(() =>
