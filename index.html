@@ -3792,22 +3792,21 @@
                                 </div>
                             </div>
                         </div>
-                       <!-- Salvataggio Esterno Automatico -->
+                       <!-- Backup PWA immediato -->
 <div class="settings-section external-save-settings">
-    <h3><i class="fas fa-save"></i> Salvataggio Esterno Automatico</h3>
-    <p>Usa questa funzione per salvare i dati in un file sul tuo computer in tempo reale.</p>
+    <h3><i class="fas fa-save"></i> Backup PWA immediato</h3>
+    <p>I dati vengono salvati automaticamente offline in IndexedDB. Usa questo tasto per scaricare una copia JSON.</p>
     <div style="background: #f8fafc; padding: 0.8rem; border-radius: 0.5rem; margin-bottom: 1rem; border: 1px solid var(--light-gray);">
-        <strong>Come funziona:</strong><br />1. Clicca il tasto verde qui sotto.<br />2. Scegli
-        dove salvare il file (es. sul Desktop e chiamarlo <code>clienti_db.json</code>).<br />3.
-        Ogni modifica aggiornerà quel file in automatico.
+        <strong>Come funziona:</strong><br />1. L'app salva automaticamente nel browser anche offline.<br />2. Clicca il tasto verde per scaricare una copia di sicurezza.<br />3.
+        Conserva il file JSON in una cartella sicura o nel cloud.
     </div>
     <button class="btn btn-success btn-large" id="btn-connect-file" onclick="connectAutoFile()">
-        <i class="fas fa-folder-plus"></i> Collega File di Backup
+        <i class="fas fa-download"></i> Scarica Backup Ora
     </button>
-    <div class="file-status disconnected" id="file-status-box">Nessun file collegato.</div>
+    <div class="file-status connected" id="file-status-box">Salvataggio automatico offline attivo in IndexedDB.</div>
     <div style="margin-top: 15px">
         <button class="btn btn-primary" id="btn-force-save" onclick="forceExternalSave()" style="display: none; width: 100%">
-            <i class="fas fa-save"></i> Aggiorna Backup Esterno Ora
+            <i class="fas fa-download"></i> Scarica Backup Ora
         </button>
     </div>
 </div>
@@ -3833,8 +3832,8 @@
         <button class="btn" onclick="showBackupHistory()" style="margin-top: 5px; color: #1e293b; border: 1px solid #cbd5e1; background: white;">
     <i class="fas fa-history"></i> Vedi cronologia backup locali
 </button>
-        <button class="btn btn-warning" onclick="showAutomaticBackupHistory()" style="margin-top: 5px; margin-left: 8px; box-shadow: 0 2px 6px rgba(245, 158, 11, 0.35);" title="Recupera dati salvati automaticamente dall'app">
-    <i class="fas fa-shield-alt"></i> Recupera backup automatici
+        <button class="btn btn-warning" onclick="showAutomaticBackupHistory()" style="margin-top: 5px; margin-left: 8px; box-shadow: 0 2px 6px rgba(245, 158, 11, 0.35);" title="Verifica lo snapshot automatico salvato offline">
+    <i class="fas fa-shield-alt"></i> Verifica salvataggio automatico
 </button>
     </div>
 </div>
@@ -6503,6 +6502,33 @@
                 return type || "Tipo non specificato";
             }
             async function connectAutoFile() {
+    if (window.electronAPI?.__pwaMock) {
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const filePath = `termomanager-backup-${dateStr}.json`;
+        const dataToSave = {
+            clients: clients,
+            interventions: interventions,
+            savedAt: new Date().toISOString(),
+            app: 'TermoManager',
+            version: '5.0',
+            backupType: 'pwa-manual'
+        };
+        try {
+            await window.termoPwa.saveSnapshotToDexie(dataToSave);
+            const result = await window.electronAPI.writeFile(filePath, dataToSave);
+            if (!result.success) throw new Error(result.error || 'Download non riuscito');
+            const statusBox = document.getElementById('file-status-box');
+            if (statusBox) {
+                statusBox.className = 'file-status connected';
+                statusBox.innerText = `Backup scaricato: ${filePath}. Salvataggio offline IndexedDB attivo.`;
+            }
+            showNotification('Backup scaricato con successo!', 'success');
+        } catch (err) {
+            console.error('Errore backup PWA:', err);
+            showNotification('Errore durante il download del backup', 'danger');
+        }
+        return;
+    }
     if (!window.electronAPI) {
         showNotification('Funzione disponibile solo nella versione desktop', 'warning');
         return;
@@ -6528,6 +6554,10 @@
     }
   }
             async function forceExternalSave() {
+    if (window.electronAPI?.__pwaMock) {
+        await connectAutoFile();
+        return;
+    }
     if (!autoFilePath) {
         showNotification('Nessun file collegato', 'warning');
         return;
@@ -6541,6 +6571,9 @@
     }
 }
             async function writeToDisk(force = false) {
+    if (window.electronAPI?.__pwaMock) {
+        return;
+    }
     if (!autoFilePath) return;
     if (fileSaveTimeout && !force) {
         clearTimeout(fileSaveTimeout);
@@ -8070,29 +8103,25 @@ async function deleteIntervention(interventionId) {
                         settings = JSON.parse(savedSettings);
                     }
                     appSettingsCache = normalizeAppSettings(settings);
-                    if (savedSettings) {
-                        // dark mode rimossa
-                        const notifyUrgent = document.getElementById("notifyUrgent");
-                        if (notifyUrgent) {
-                            notifyUrgent.checked = appSettingsCache.notificationsEnabled;
+                    const notifyUrgent = document.getElementById("notifyUrgent");
+                    if (notifyUrgent) {
+                        notifyUrgent.checked = appSettingsCache.notificationsEnabled;
+                    }
+                    const daysBeforeNotify = document.getElementById("daysBeforeNotify");
+                    const daysValue = document.getElementById("daysValue");
+                    if (daysBeforeNotify) {
+                        daysBeforeNotify.value = appSettingsCache.daysBeforeNotify;
+                        if (daysValue) daysValue.textContent = appSettingsCache.daysBeforeNotify + " giorni";
+                    }
+                    const savedBackupHistory = localStorage.getItem("termoManagerBackupHistory");
+                    if (savedBackupHistory) {
+                        backupHistory = JSON.parse(savedBackupHistory);
+                        for (let entry of backupHistory) {
+                            if (entry.filePath === undefined) entry.filePath = null;
                         }
-                        const daysBeforeNotify = document.getElementById("daysBeforeNotify");
-                        const daysValue = document.getElementById("daysValue");
-                        if (daysBeforeNotify) {
-                            daysBeforeNotify.value = appSettingsCache.daysBeforeNotify;
-                            if (daysValue) daysValue.textContent = appSettingsCache.daysBeforeNotify + " giorni";
-                        }
-                        const savedBackupHistory = localStorage.getItem("termoManagerBackupHistory");
-                        if (savedBackupHistory) {
-                            backupHistory = JSON.parse(savedBackupHistory);
-                            // Assicura che ogni entry abbia filePath (per compatibilità con versioni precedenti)
-                            for (let entry of backupHistory) {
-                                if (entry.filePath === undefined) entry.filePath = null;
-                            }
-                        }
-                        if (appSettingsCache.notificationsEnabled) {
-                            requestNotificationPermission();
-                        }
+                    }
+                    if (appSettingsCache.notificationsEnabled) {
+                        requestNotificationPermission();
                     }
                     applyPatronSaintSettingsToForm();
                 } catch (error) {
@@ -8640,6 +8669,43 @@ async function deleteIntervention(interventionId) {
                 const backupList = document.getElementById("automaticBackupList");
                 const noBackupsMsg = document.getElementById("noAutomaticBackups");
                 if (!modal || !backupList || !noBackupsMsg) return;
+                if (window.electronAPI?.__pwaMock) {
+                    backupList.innerHTML = `<div style="padding: 15px; color: var(--gray);">Verifica salvataggio automatico offline...</div>`;
+                    noBackupsMsg.style.display = "none";
+                    modal.classList.add("active");
+                    setTimeout(() => makeModalDraggable(modal), 10);
+                    try {
+                        const snapshot = await window.termoPwa.loadSnapshotFromDexie();
+                        backupList.innerHTML = "";
+                        if (!snapshot) {
+                            noBackupsMsg.style.display = "block";
+                            showNotification("Nessuno snapshot automatico trovato in IndexedDB", "warning");
+                            return;
+                        }
+                        noBackupsMsg.style.display = "none";
+                        const savedAt = formatBackupDateTime(snapshot.savedAt || new Date().toISOString());
+                        const item = document.createElement("div");
+                        item.style.cssText =
+                            "padding: 15px; margin-bottom: 10px; background-color: var(--light); border-radius: var(--border-radius); display: flex; justify-content: space-between; align-items: center; gap: 12px;";
+                        item.innerHTML = `<div><h4 style="margin-bottom:5px;">Snapshot automatico IndexedDB</h4><p style="color: var(--gray); font-size: 0.9rem; margin-bottom: 5px;"><i class="fas fa-calendar"></i> ${escapeHTML(savedAt)}</p><p style="color: var(--gray); font-size: 0.9rem;"><i class="fas fa-users"></i> ${(snapshot.clients || []).length} clienti • <i class="fas fa-tools"></i> ${(snapshot.interventions || []).length} interventi</p></div>`;
+                        const actions = document.createElement("div");
+                        actions.style.cssText = "display: flex; gap: 8px; flex-shrink: 0;";
+                        const downloadBtn = document.createElement("button");
+                        downloadBtn.type = "button";
+                        downloadBtn.className = "btn btn-primary";
+                        downloadBtn.innerHTML = `<i class="fas fa-download"></i> Scarica copia`;
+                        downloadBtn.addEventListener("click", () => connectAutoFile());
+                        actions.appendChild(downloadBtn);
+                        item.appendChild(actions);
+                        backupList.appendChild(item);
+                    } catch (error) {
+                        console.error("Errore verifica snapshot IndexedDB:", error);
+                        backupList.innerHTML = "";
+                        noBackupsMsg.style.display = "block";
+                        showNotification("Errore nella verifica del salvataggio automatico", "danger");
+                    }
+                    return;
+                }
                 if (!window.electronAPI || !window.electronAPI.listAppDataBackups) {
                     showNotification("Backup automatici disponibili solo nell'app desktop", "warning");
                     return;
